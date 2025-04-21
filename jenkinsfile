@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        TF_VAR_aws_region = 'us-east-1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'US-456', url: 'https://github.com/karth-ck/Terraform-jenkins-project-01.git'
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh 'terraform plan -out=tfplan -input=false -no-color'
+                }
+            }
+        }
+
+        stage('Terraform Apply on Merge') {
+            when {
+                branch 'main'
+            }
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    script {
+                        def isMerge = sh(script: "git log -1 --pretty=%P | grep ' ' || true", returnStdout: true).trim()
+                        if (isMerge) {
+                            echo "Merge commit detected on main. Running terraform apply..."
+                            sh 'terraform apply -auto-approve tfplan'
+                        } else {
+                            echo "Not a merge commit. Skipping terraform apply."
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Show Instance IP') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    def ip = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
+                    echo "Your site is live at: http://${ip}"
+                }
+            }
+        }
+    }
+}
