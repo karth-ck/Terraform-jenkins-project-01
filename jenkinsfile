@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'US-456', url: 'https://github.com/karth-ck/Terraform-jenkins-project-01.git'
+                git branch: 'UT-789', url: 'https://github.com/karth-ck/Terraform-jenkins-project-01.git'
             }
         }
 
