@@ -12,6 +12,14 @@ pipeline {
             }
         }
 
+        stage('Debug Workspace') {
+            steps {
+                // verify that outputs.tf (and other .tf files) are here
+                sh 'ls -1 | grep -E "\\.tf$" || echo "No .tf files found"'
+                sh 'grep -R "instance_ip" . || echo "instance_ip output not found"'
+            }
+        }
+
         stage('Terraform Init') {
             steps {
                 withCredentials([[
@@ -34,7 +42,7 @@ pipeline {
             }
         }
 
-        stage('Terraform Apply on Merge') {
+        stage('Terraform Apply') {
             when {
                 branch 'main'
             }
@@ -44,12 +52,17 @@ pipeline {
                     credentialsId: 'aws-creds'
                 ]]) {
                     script {
-                        def isMerge = sh(script: "git log -1 --pretty=%P | grep ' ' || true", returnStdout: true).trim()
-                        if (isMerge) {
-                            echo "Merge commit detected on main. Running terraform apply..."
+                        // check for a merge commit (parents >1)
+                        def parents = sh(
+                            script: "git log -1 --pretty=%P | wc -w",
+                            returnStdout: true
+                        ).trim().toInteger()
+
+                        if (parents > 1) {
+                            echo "Merge commit detected on main. Applying Terraform..."
                             sh 'terraform apply -auto-approve tfplan'
                         } else {
-                            echo "Not a merge commit. Skipping terraform apply."
+                            echo "Not a merge commit on main. Skipping terraform apply."
                         }
                     }
                 }
@@ -62,8 +75,16 @@ pipeline {
             }
             steps {
                 script {
-                    def ip = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
-                    echo "Your site is live at: http://${ip}"
+                    def ip = sh(
+                        script: "terraform output -raw instance_ip || true",
+                        returnStdout: true
+                    ).trim()
+
+                    if (ip) {
+                        echo "Your site is live at: http://${ip}"
+                    } else {
+                        echo "No instance_ip output found—apply may have been skipped."
+                    }
                 }
             }
         }
